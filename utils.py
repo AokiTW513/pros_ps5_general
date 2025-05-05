@@ -7,3 +7,10 @@ def vel_limit(value):
     elif value <= 0.0:
         value = 0.0
     return value
+
+def angle_limit(value):
+    if value >= 30.0:
+        value = 30.0
+    elif value <= 0.0:
+        value = 0.0
+    return value

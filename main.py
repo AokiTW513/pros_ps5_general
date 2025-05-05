@@ -39,6 +39,7 @@ def publish_wheel(ws_client, cmd, front_topic, rear_topic, front_range, rear_ran
         },
         "data": cmd[front_range[0]:front_range[1]]
     }
+    
     ws_client.publish(rear_topic, rear_msg)
     ws_client.publish(front_topic, front_msg)
 
@@ -50,6 +51,8 @@ def main():
     rosbridge_port = load_rosbridge_port()
     ws_client = RosbridgeClient(rosbridge_port=rosbridge_port)
     joystick_handler = JoystickHandler()
+
+    joysticks = {}
 
     # 初始狀態：輸入 IP 模式
     input_mode = True
@@ -103,19 +106,54 @@ def main():
                             joystick_handler.rear_wheel_range),
                         arm_publish_callback=lambda arm_msg: ws_client.publish(joystick_handler.arm_topic, arm_msg)
                     )
-                elif event.type == pygame.JOYAXISMOTION:
-                    joystick_handler.process_axis_motion(event.axis, event.value)
+                # elif event.type == pygame.JOYAXISMOTION:
+                #     joystick_handler.process_axis_motion(
+                #         event.axis, 
+                #         event.value, 
+                #         wheel_publish_callback=lambda cmd: publish_wheel(ws_client, cmd,
+                #             joystick_handler.front_wheel_topic,
+                #             joystick_handler.rear_wheel_topic,
+                #             joystick_handler.front_wheel_range,
+                #             joystick_handler.rear_wheel_range)
+                #     )
+                else:
+                    pass
+
+             # Handle hotplugging
+            if event.type == pygame.JOYDEVICEADDED:
+                # This event will be generated when the program starts for every
+                # joystick, filling up the list without needing to create them manually.
+                joy = pygame.joystick.Joystick(event.device_index)
+                joysticks[joy.get_instance_id()] = joy
+                print(f"Joystick {joy.get_instance_id()} connencted")
+
+            if event.type == pygame.JOYDEVICEREMOVED:
+                del joysticks[event.instance_id]
+                print(f"Joystick {event.instance_id} disconnected")
+        
+        #continuously pull joystick data instead of waiting for events (for 0s)
+        if pygame.joystick.get_count() > 0:
+            joystick_handler.process_joystick_continous(
+                            joysticks, 
+                            wheel_publish_callback=lambda cmd: publish_wheel(ws_client, cmd,
+                            joystick_handler.front_wheel_topic,
+                            joystick_handler.rear_wheel_topic,
+                            joystick_handler.front_wheel_range,
+                            joystick_handler.rear_wheel_range)
+                    )
 
         connection_status = "Connected" if ws_client.ws else "Disconnected"
         ui.draw(
             joystick_handler.velocity,
+            joystick_handler.angle_step_deg,
             rosbridge_ip,
             connection_status,
             connection_error,
             input_mode,
             ip_input,
             joystick_handler.arm_index,
-            joystick_handler.arm_angles
+            joystick_handler.arm_angles,
+            joystick_handler.wheel_speed
         )
         clock.tick(30)
 
