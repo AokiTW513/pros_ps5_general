@@ -153,7 +153,8 @@ def main():
             ip_input,
             joystick_handler.arm_index,
             joystick_handler.arm_angles,
-            joystick_handler.wheel_speed
+            joystick_handler.wheel_speed,
+            joystick_handler.isUnity
         )
         clock.tick(30)
 

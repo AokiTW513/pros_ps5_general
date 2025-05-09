@@ -9,7 +9,7 @@ class UI:
         pygame.display.set_caption("Xbox Series X Controller UI")
         self.font = pygame.font.SysFont("Arial", 24)
 
-    def draw(self, velocity, angle, rosbridge_ip, connection_status, connection_error, input_mode, ip_input, arm_index, arm_angles, wheel_speed):
+    def draw(self, velocity, angle, rosbridge_ip, connection_status, connection_error, input_mode, ip_input, arm_index, arm_angles, wheel_speed, isInUnity):
         self.screen.fill((0, 0, 0))
 
         # 顯示速度
@@ -23,6 +23,10 @@ class UI:
         # 顯示連線資訊
         connection_text = self.font.render(f"ROSBridge ({rosbridge_ip}): {connection_status}", True, (255, 255, 255))
         self.screen.blit(connection_text, (10, 70))
+        
+        connection_text = self.font.render(f"Unity: {isInUnity}", True, (255, 255, 255))
+        self.screen.blit(connection_text, (10, 100))
+        
 
         # 顯示錯誤訊息（若有）
         if connection_error:

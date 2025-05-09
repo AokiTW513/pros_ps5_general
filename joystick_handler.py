@@ -20,6 +20,8 @@ class JoystickHandler:
         self.velocity = 10.0
         self.arm_joints_count = 7 # 手臂數量
         self.arm_angles = [0.0] * self.arm_joints_count
+        self.arm_realangles = [0.0] * self.arm_joints_count
+        self.arm_angles_Unity_offset = [10, -60, -70, -90, -90 ,-90 ,-70]
         self.joint_limits = [(0.0, math.radians(180)) for _  in range(self.arm_joints_count)]
         self.arm_index = 0
         self.arm_topic = "/robot_arm"
@@ -59,6 +61,8 @@ class JoystickHandler:
         self.previousArm_button = 3 #上一個關節
         self.armAngleStepDegPlus_button = 7 #增加關節角度變化
         self.armAngleStepDegMinus_button = 6 #減少關節角度變化
+        self.isUnityButton = 9
+        self.isUnity = False
 
         self.wheel_speed = [0, 0, 0, 0] #wheel speed for gui
 
@@ -70,7 +74,7 @@ class JoystickHandler:
         self.load_config("config.csv")
 
         # 先在進去後重設所有手臂角度，不然角度都會為0
-        self.arm_angles = [math.radians(deg) for deg in self.reset_arm_angle]
+        self.arm_realangles = [math.radians(deg) for deg in self.reset_arm_angle]
         self.clip_arm_angles()
 
     def load_config(self, filename="config.csv"):
@@ -204,11 +208,12 @@ class JoystickHandler:
                 self.nextArm_button = int(global_params["nextArm_button"])
             if "previousArm_button" in global_params:
                 self.previousArm_button = int(global_params["previousArm_button"])
-                print(self.previousArm_button)
             if "armAngleStepDegPlus_button" in global_params:
                 self.armAngleStepDegPlus_button = int(global_params["armAngleStepDegPlus_button"])
             if "armAngleStepDegMinus_button" in global_params:
                 self.armAngleStepDegMinus_button = int(global_params["armAngleStepDegMinus_button"])
+            if "isUnityButton" in global_params:
+                self.isUnityButton = int(global_params["isUnityButton"])
             
             # 讀取各關節上下限
             joint_rows.sort(key=lambda x: int(x["param"]))  # 根據 joint 編號排序
@@ -220,7 +225,7 @@ class JoystickHandler:
                     self.joint_limits.append((math.radians(lower_deg), math.radians(upper_deg)))
                 else:
                     self.joint_limits.append((0.0, math.radians(180)))
-            self.arm_angles = [0.0] * self.arm_joints_count
+            self.arm_realangles = [0.0] * self.arm_joints_count
             self.arm_index = 0
             print(f"Loaded config: {self.arm_joints_count} joints, angle step {self.angle_step_deg} deg, speed step {self.speed_incr},")
             print(f"arm topic: {self.arm_topic}, front wheel topic: {self.front_wheel_topic}, rear wheel topic: {self.rear_wheel_topic}")
@@ -234,12 +239,12 @@ class JoystickHandler:
         """將各關節角度限制在上下限之間（弧度）"""
         for i in range(self.arm_joints_count):
             lower, upper = self.joint_limits[i]
-            self.arm_angles[i] = max(lower, min(self.arm_angles[i], upper))
+            self.arm_realangles[i] = max(lower, min(self.arm_realangles[i], upper))
 
     def set_joint_count(self, count):
         """指定關節數量（不從檔案時使用）"""
         self.arm_joints_count = count
-        self.arm_angles = [0.0] * count
+        self.arm_realangles = [0.0] * count
         self.joint_limits = [(0.0, math.radians(180)) for _ in range(count)]
         self.arm_index = 0
 
@@ -258,9 +263,24 @@ class JoystickHandler:
         elif button == self.stop_button:   # 停止
             wheel_publish_callback([0.0, 0.0, 0.0, 0.0])
         elif button == self.resetArm_button:   # Start鍵：重設所有手臂角度為 CSV 設定的值
-            self.arm_angles = [math.radians(deg) for deg in self.reset_arm_angle]
+            self.arm_realangles = [math.radians(deg) for deg in self.reset_arm_angle]
+            if self.isUnity:
+                for i in range(len(self.arm_realangles)):
+                    self.arm_realangles[i] += math.radians(self.arm_angles_Unity_offset[i])
+            else:
+                for i in range(len(self.arm_realangles)):
+                    self.arm_realangles[i] -= math.radians(self.arm_angles_Unity_offset[i])
             self.clip_arm_angles()
-            arm_publish_callback({"positions": self.arm_angles})
+            arm_publish_callback({"positions": self.arm_realangles})
+        elif button == self.isUnityButton:
+            self.isUnity = not self.isUnity
+            if self.isUnity:
+                for i in range(len(self.arm_realangles)):
+                    self.arm_realangles[i] += math.radians(self.arm_angles_Unity_offset[i])
+            else:
+                for i in range(len(self.arm_realangles)):
+                    self.arm_realangles[i] -= math.radians(self.arm_angles_Unity_offset[i])
+            print(self.isUnity)
             #下面是原本的代碼，會把所有手臂角度轉成CSV設定的值，不過應該可能只能設定一個
             #reset_val = math.radians(self.reset_arm_angle)
             #self.arm_angles = [reset_val] * self.arm_joints_count
@@ -273,25 +293,33 @@ class JoystickHandler:
             self.velocity += self.speed_incr
             self.velocity = vel_limit(self.velocity)
         elif button == self.armAnglePlus_button:   # B：增加當前關節角度
-            self.arm_angles[self.arm_index] += step_radians
+            self.arm_realangles[self.arm_index] += step_radians
             self.clip_arm_angles()
-            arm_publish_callback({"positions": self.arm_angles})
+            arm_publish_callback({"positions": self.arm_realangles})
+            print("position = " + str(self.arm_realangles[self.arm_index]))
         elif button == self.armAngleMinus_button:   # X：減少當前關節角度
-            self.arm_angles[self.arm_index] -= step_radians
+            self.arm_realangles[self.arm_index] -= step_radians
             self.clip_arm_angles()
-            arm_publish_callback({"positions": self.arm_angles})
+            arm_publish_callback({"positions": self.arm_realangles})
+            print("position = " + str(self.arm_realangles[self.arm_index]))
         elif button == self.previousArm_button:   # Y：上一個關節
             self.arm_index = max(self.arm_index - 1, 0)
-            print(self.previousArm_button)
         elif button == self.nextArm_button:   # A：下一個關節
             self.arm_index = min(self.arm_index + 1, self.arm_joints_count - 1)
-        elif button == self.armAngleStepDegPlus_button:   # R3：增加角度變化值
+        elif button == self.armAngleStepDegPlus_button:   # R3：增加角度步進值
             self.angle_step_deg += self.angle_step_deg_change
             self.angle_step_deg = angle_limit(self.angle_step_deg)
-        elif button == self.armAngleStepDegMinus_button:   # L3：減少角度變化值
+        elif button == self.armAngleStepDegMinus_button:   # L3：減少角度步進值
             self.angle_step_deg -= self.angle_step_deg_change
             self.angle_step_deg = angle_limit(self.angle_step_deg)
 
+        if self.isUnity:
+            for i in range(len(self.arm_realangles)):
+                self.arm_angles[i] = self.arm_realangles[i]
+                self.arm_angles[i] -= math.radians(self.arm_angles_Unity_offset[i])
+        else:
+            for i in range(len(self.arm_realangles)):
+                self.arm_angles[i] = self.arm_realangles[i]
         time.sleep(0.01)
 
     def process_axis_motion(self, axis, value, wheel_publish_callback):
