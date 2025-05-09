@@ -48,7 +48,7 @@ class JoystickHandler:
         self.right_stick_vertical = 3
 
         #controller joystick button
-        self.fornt_button = 11 #前進
+        self.front_button = 11 #前進
         self.back_button = 12 #後退
         self.left_button = 13 #左轉
         self.right_button = 14 #右轉
@@ -125,11 +125,14 @@ class JoystickHandler:
                 reader = csv.DictReader(f)
                 global_params = {}
                 joint_rows = []
+                jointunity_rows = [] 
                 for row in reader:
                     if row["type"] == "global":
                         global_params[row["param"]] = row["value1"]
                     elif row["type"] == "joint":
                         joint_rows.append(row)
+                    elif row["type"] == "jointunity":
+                        jointunity_rows.append(row)
             # 全域參數讀取
             if "joints_count" in global_params:
                 self.arm_joints_count = int(global_params["joints_count"])
@@ -186,7 +189,7 @@ class JoystickHandler:
                 self.angle_step_deg_change = float (global_params["angle_step_deg_change"])
             #按鈕設定
             if "front_button" in global_params:
-                self.fornt_button = int(global_params["front_button"])
+                self.front_button = int(global_params["front_button"])
             if "back_button" in global_params:
                 self.back_button = int(global_params["back_button"])
             if "left_button" in global_params:
@@ -204,7 +207,7 @@ class JoystickHandler:
             if "armAnglePlus_button" in global_params:
                 self.armAnglePlus_button = int(global_params["armAnglePlus_button"])
             if "armAngleMinus_button" in global_params:
-                self.armAngleDecrease_button = int(global_params["armAngleMinus_button"])
+                self.armAngleMinus_button = int(global_params["armAngleMinus_button"])
             if "nextArm_button" in global_params:
                 self.nextArm_button = int(global_params["nextArm_button"])
             if "previousArm_button" in global_params:
@@ -224,20 +227,15 @@ class JoystickHandler:
             else:
                 self.arm_angles_Unity_offset = 0.0
             
-            joint_rows.sort(key=lambda x: int(x["param"]))  # 根據 joint 編號排序
+            jointunity_rows.sort(key=lambda x: int(x["param"]))  # 根據 joint 編號排序
             self.joint_limits_unity = []
             for i in range(self.arm_joints_count):
-                if i < len(joint_rows):
-                    lower_deg = float(joint_rows[i]["value1"])
-                    upper_deg = float(joint_rows[i]["value2"])
+                if i < len(jointunity_rows):
+                    lower_deg = float(jointunity_rows[i]["value1"])
+                    upper_deg = float(jointunity_rows[i]["value2"])
                     self.joint_limits_unity.append((math.radians(lower_deg), math.radians(upper_deg)))
                 else:
                     self.joint_limits_unity.append((0.0, math.radians(180)))
-            self.arm_realangles = [0.0] * self.arm_joints_count
-            self.arm_index = 0
-            print(f"Loaded config: {self.arm_joints_count} joints, angle step {self.angle_step_deg} deg, speed step {self.speed_incr},")
-            print(f"arm topic: {self.arm_topic}, front wheel topic: {self.front_wheel_topic}, rear wheel topic: {self.rear_wheel_topic}")
-            print(f"front wheel range: {self.front_wheel_range}, rear wheel range: {self.rear_wheel_range}")
             
             # 讀取各關節上下限
             joint_rows.sort(key=lambda x: int(x["param"]))  # 根據 joint 編號排序
@@ -265,10 +263,14 @@ class JoystickHandler:
             for i in range(self.arm_joints_count):
                 lower, upper = self.joint_limits_unity[i]
                 self.arm_realangles[i] = max(lower, min(self.arm_realangles[i], upper))
+                print("Joint" + str([i]) + " : " + str(self.arm_realangles[i]))
+                print("CSVJoint" + str([i]) + " : " + str(self.joint_limits_unity[i]))
         else:
             for i in range(self.arm_joints_count):
                 lower, upper = self.joint_limits[i]
                 self.arm_realangles[i] = max(lower, min(self.arm_realangles[i], upper))
+                print("Joint" + str([i]) + " : " + str(self.arm_realangles[i]))
+                print("CSVJoint" + str([i]) + " : " + str(self.joint_limits[i]))
 
     def set_joint_count(self, count):
         """指定關節數量（不從檔案時使用）"""
@@ -289,7 +291,7 @@ class JoystickHandler:
         # 轉換步進角度為弧度
         step_radians = math.radians(self.angle_step_deg)
 
-        if button == self.fornt_button:  # 前進
+        if button == self.front_button:  # 前進
             wheel_publish_callback([self.velocity, self.velocity, self.velocity, self.velocity])
         elif button == self.back_button:  # 後退
             wheel_publish_callback([-self.velocity, -self.velocity, -self.velocity, -self.velocity])
@@ -304,9 +306,6 @@ class JoystickHandler:
             if self.isUnity:
                 for i in range(len(self.arm_realangles)):
                     self.arm_realangles[i] += math.radians(self.arm_angles_Unity_offset[i])
-            else:
-                for i in range(len(self.arm_realangles)):
-                    self.arm_realangles[i] -= math.radians(self.arm_angles_Unity_offset[i])
             self.clip_arm_angles()
             arm_publish_callback({"positions": self.arm_realangles})
         elif button == self.isUnityButton:
