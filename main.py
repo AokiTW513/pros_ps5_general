@@ -94,6 +94,24 @@ def main():
                     elif event.key == pygame.K_q:
                         ws_client.disconnect()
                         running = False
+                    elif event.key == pygame.K_r:
+                        joystick_handler.start_recording()
+                        print("[🎬] Start recording...")
+                    elif event.key == pygame.K_s:
+                        joystick_handler.stop_and_save_recording("joystick_recording.csv")
+                    elif event.key == pygame.K_p:
+                        if not joystick_handler.replaying:
+                            joystick_handler.start_replay(
+                                "joystick_recording.csv",
+                                wheel_publish_callback=lambda cmd: publish_wheel(ws_client, cmd,
+                                    joystick_handler.front_wheel_topic,
+                                    joystick_handler.rear_wheel_topic,
+                                    joystick_handler.front_wheel_range,
+                                    joystick_handler.rear_wheel_range)
+                            )
+                        elif joystick_handler.replaying:
+                            joystick_handler.replaying = False
+                            print("Stop replay!")
 
             if not input_mode:
                 if event.type == pygame.JOYBUTTONDOWN:
@@ -116,6 +134,16 @@ def main():
                 #             joystick_handler.front_wheel_range,
                 #             joystick_handler.rear_wheel_range)
                 #     )
+                elif event.type == pygame.JOYHATMOTION:
+                    (x, y) = event.value
+                    joystick_handler.process_hat_press(
+                        event.value,
+                        wheel_publish_callback=lambda cmd: publish_wheel(ws_client, cmd,
+                            joystick_handler.front_wheel_topic,
+                            joystick_handler.rear_wheel_topic,
+                            joystick_handler.front_wheel_range,
+                            joystick_handler.rear_wheel_range)
+                    )   
                 else:
                     pass
 
@@ -131,8 +159,12 @@ def main():
                 del joysticks[event.instance_id]
                 print(f"Joystick {event.instance_id} disconnected")
         
+        
+
         #continuously pull joystick data instead of waiting for events (for 0s)
-        if pygame.joystick.get_count() > 0:
+        if joystick_handler.replaying:
+            joystick_handler.update_replay()
+        elif pygame.joystick.get_count() > 0:
             joystick_handler.process_joystick_continous(
                             joysticks, 
                             wheel_publish_callback=lambda cmd: publish_wheel(ws_client, cmd,

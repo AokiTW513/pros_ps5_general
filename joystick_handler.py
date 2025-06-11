@@ -16,6 +16,18 @@ class JoystickHandler:
             self.joystick.init()  # 初始化搖桿
             print(f"Detected Joystick: {self.joystick.get_name()}")
 
+        # 搖桿錄製用
+        self.recording_enabled = False
+        self.recorded_data = []
+        self.recording_start_time = None
+        self.recording_fps = 30
+        self._last_record_time = 0
+
+        self.replaying = False
+        self.replay_data = []
+        self.replay_start_time = None
+        self._replay_index = 0
+
         # 預設值
         self.velocity = 10.0
         self.arm_joints_count = 7 # 手臂數量
@@ -287,6 +299,16 @@ class JoystickHandler:
             for i in range(len(self.arm_realangles)):
                 self.arm_realangles[i] -= math.radians(self.arm_angles_Unity_offset[i])
 
+    def process_hat_press(self, hat, wheel_publish_callback):
+        if hat == (0, 1): # 前進
+            finalWheelSpeed = [self.velocity, self.velocity, self.velocity, self.velocity]
+        elif hat == (0, -1):  # 後退
+            finalWheelSpeed = [-self.velocity, -self.velocity, -self.velocity, -self.velocity]
+        elif hat == (0, 0): # 停止
+            finalWheelSpeed = [0.0, 0.0, 0.0, 0.0]
+        wheel_publish_callback(finalWheelSpeed)
+        self.wheel_speed = finalWheelSpeed
+     
     def process_button_press(self, button, wheel_publish_callback, arm_publish_callback):
         # 轉換步進角度為弧度
         step_radians = math.radians(self.angle_step_deg)
@@ -390,6 +412,75 @@ class JoystickHandler:
             wheel_publish_callback(finalWheelSpeed)
             self.wheel_speed = finalWheelSpeed
 
+        if self.recording_enabled:
+                now = time.time()
+                if now - self._last_record_time >= 1.0 / self.recording_fps:
+                    timestamp = now - self.recording_start_time
+                    self.recorded_data.append([
+                        timestamp,
+                        axis_horizontal,
+                        axis_vertical,
+                        axis_rotational,
+                        finalWheelSpeed[0],
+                        finalWheelSpeed[1],
+                        finalWheelSpeed[2],
+                        finalWheelSpeed[3],
+                    ])
+                    self._last_record_time = now
+    
+    def start_recording(self):
+        self.recording_enabled = True
+        self.recorded_data = []
+        self.recording_start_time = time.time()
+
+    def stop_and_save_recording(self, filename="joystick_recording.csv"):
+        self.recording_enabled = False
+        try:
+            with open(filename, mode="w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["timestamp", "axis_horizontal", "axis_vertical", "axis_rotational",
+                                "frontLeft", "frontRight", "rearLeft", "rearRight"])
+                for row in self.recorded_data:
+                    writer.writerow(row)
+            print(f"[✔] Joystick recording saved to {filename}")
+        except Exception as e:
+            print("[✘] Error saving recording:", e)
+
+    def start_replay(self, filename, wheel_publish_callback):
+        try:
+            with open(filename, mode="r") as f:
+                reader = csv.DictReader(f)
+                self.replay_data = list(reader)
+            self.replaying = True
+            self.replay_start_time = time.time()
+            self._replay_index = 0
+            self._replay_callback = wheel_publish_callback
+            print(f"[▶] Replay started from {filename}")
+        except Exception as e:
+            print("[✘] Error loading replay:", e)
+
+    def update_replay(self):
+        if not self.replaying or self._replay_index >= len(self.replay_data):
+            return
+
+        now = time.time() - self.replay_start_time
+
+        while self._replay_index < len(self.replay_data):
+            entry = self.replay_data[self._replay_index]
+            timestamp = float(entry["timestamp"])
+            if timestamp > now:
+                break  # not time yet
+
+            # 呼叫 callback 送出對應速度
+            speed = [float(entry["frontLeft"]), float(entry["frontRight"]),
+                    float(entry["rearLeft"]), float(entry["rearRight"])]
+            self._replay_callback(speed)
+            self.wheel_speed = speed
+            self._replay_index += 1
+
+        if self._replay_index >= len(self.replay_data):
+            self.replaying = False
+            print("[⏹] Replay finished.")
 
     def get_joystick(self):
         return self.joystick
